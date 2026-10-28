@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { UserAccount, SchoolProfile } from '../types';
 import { registerUser, loginUser } from '../utils/authStorage';
-import { SAMPLE_SCHOOL_PROFILE } from '../utils/sampleData';
 import { 
   Phone, 
   Lock, 
@@ -10,7 +9,6 @@ import {
   CheckCircle2, 
   AlertCircle, 
   ShieldCheck, 
-  Sparkles, 
   ArrowRight, 
   LogIn, 
   UserPlus 
@@ -27,16 +25,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const [loginMobile, setLoginMobile] = useState('');
   const [loginPin, setLoginPin] = useState('');
   
-  // Register form states
+  // Register form states (Production clean defaults)
   const [regMobile, setRegMobile] = useState('');
   const [regPin, setRegPin] = useState('');
   const [regName, setRegName] = useState('');
   const [regSchool, setRegSchool] = useState('');
   const [regUdise, setRegUdise] = useState('');
-  const [regBlock, setRegBlock] = useState('सांगानेर');
-  const [regDistrict, setRegDistrict] = useState('जयपुर');
-  const [regPrimaryEnrolled, setRegPrimaryEnrolled] = useState(48);
-  const [regUpperPrimaryEnrolled, setRegUpperPrimaryEnrolled] = useState(36);
+  const [regBlock, setRegBlock] = useState('');
+  const [regDistrict, setRegDistrict] = useState('');
+  const [regPrimaryEnrolled, setRegPrimaryEnrolled] = useState<number | ''>('');
+  const [regUpperPrimaryEnrolled, setRegUpperPrimaryEnrolled] = useState<number | ''>('');
 
   // Status/Error messages
   const [errorMsg, setErrorMsg] = useState('');
@@ -48,17 +46,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     const res = loginUser(loginMobile, loginPin);
     if (res.success && res.user) {
       setSuccessMsg(res.message);
-      setTimeout(() => onLoginSuccess(res.user!), 500);
+      setTimeout(() => onLoginSuccess(res.user!), 400);
     } else {
       setErrorMsg(res.message);
-    }
-  };
-
-  const handleDemoLogin = () => {
-    setErrorMsg('');
-    const res = loginUser('9829012345', '1234');
-    if (res.success && res.user) {
-      onLoginSuccess(res.user);
     }
   };
 
@@ -82,16 +72,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     const newProfile: SchoolProfile = {
       id: `school_${regMobile}`,
       schoolName: regSchool.trim(),
-      udiseCode: regUdise.trim() || '08120000000',
-      block: regBlock.trim() || 'ब्लॉक',
-      district: regDistrict.trim() || 'जिला',
+      udiseCode: regUdise.trim() || '',
+      block: regBlock.trim() || '',
+      district: regDistrict.trim() || '',
       headmasterName: regName.trim() || 'संस्था प्रधान',
       inchargeName: 'पोषाहार प्रभारी',
       cchName1: 'कुक कम हेल्पर 1',
-      cchName2: 'कुक कम हेल्पर 2',
-      bankAccountNo: '00000000000',
-      bankIfsc: 'SBIN0000000',
-      bankName: 'भारतीय स्टेट बैंक',
+      cchName2: '',
+      bankAccountNo: '',
+      bankIfsc: '',
+      bankName: '',
       primaryEnrolled: Number(regPrimaryEnrolled) || 0,
       upperPrimaryEnrolled: Number(regUpperPrimaryEnrolled) || 0,
     };
@@ -99,7 +89,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     const newAccount: UserAccount = {
       mobileNumber: regMobile,
       pin: regPin,
-      teacherName: regName || 'शिक्षक / संस्था प्रधान',
+      teacherName: regName || 'संस्था प्रधान / प्रभारी',
       role: 'headmaster',
       createdAt: new Date().toISOString(),
       lastLogin: new Date().toISOString(),
@@ -110,7 +100,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
     const res = registerUser(newAccount);
     if (res.success) {
       setSuccessMsg(res.message);
-      setTimeout(() => onLoginSuccess(newAccount), 700);
+      setTimeout(() => onLoginSuccess(newAccount), 600);
     } else {
       setErrorMsg(res.message);
     }
@@ -128,7 +118,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
           राजस्थान स्कूल MDM व बाल गोपाल योजना पोर्टल
         </h1>
         <p className="text-xs sm:text-sm text-emerald-200">
-          मोबाइल नंबर से सुरक्षित लॉगिन • पूरे साल (2026-27) का ऑटोमेटिक रिकॉर्ड व रिपोर्ट
+          मोबाइल नंबर से सुरक्षित लॉगिन • पूरे सत्र (2026-27) का ऑटोमेटिक रिकॉर्ड व रिपोर्ट
         </p>
       </div>
 
@@ -158,7 +148,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
             }`}
           >
             <UserPlus className="w-4 h-4" />
-            <span>नया खाता (Register)</span>
+            <span>नया विद्यालय पंजीकरण (Register)</span>
           </button>
         </div>
 
@@ -183,7 +173,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
             
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                पंजीकृत मोबाइल नंबर (10 Digit Mobile):
+                पंजीकृत 10-अंकीय मोबाइल नंबर:
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
@@ -194,7 +184,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   maxLength={10}
                   value={loginMobile}
                   onChange={(e) => setLoginMobile(e.target.value.replace(/\D/g, ''))}
-                  placeholder="उदा. 98290XXXXX"
+                  placeholder="अपना 10 अंकों का मोबाइल नंबर"
                   className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-slate-900 font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/50"
                   required
                 />
@@ -203,7 +193,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                4-अंकीय सुरक्षा पिन (4-Digit PIN):
+                4-अंकीय सुरक्षा पिन (PIN):
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
@@ -214,7 +204,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   maxLength={6}
                   value={loginPin}
                   onChange={(e) => setLoginPin(e.target.value)}
-                  placeholder="पिन दर्ज करें"
+                  placeholder="सुरक्षा पिन दर्ज करें"
                   className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-xl text-slate-900 font-mono font-bold text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-slate-50/50"
                   required
                 />
@@ -223,27 +213,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
             <button
               type="submit"
-              className="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-[0.99] text-sm"
+              className="w-full bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-[0.99] text-sm mt-2"
             >
-              <span>अपने विद्यालय खाते में लॉगिन करें</span>
+              <span>विद्यालय खाते में लॉगिन करें</span>
               <ArrowRight className="w-4 h-4" />
             </button>
 
-            {/* Quick Demo Login Option */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={handleDemoLogin}
-                className="w-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
-              >
-                <Sparkles className="w-4 h-4 text-amber-600" />
-                <span>डेमो खाता से तुरंत देखें (Mobile: 9829012345 | PIN: 1234)</span>
-              </button>
-            </div>
-
-            <div className="pt-3 text-center border-t border-slate-100">
+            <div className="pt-4 text-center border-t border-slate-100">
               <p className="text-xs text-slate-500">
-                नया विद्यालय जोड़ना चाहते हैं?{' '}
+                पहली बार उपयोग कर रहे हैं?{' '}
                 <button
                   type="button"
                   onClick={() => setMode('register')}
@@ -261,14 +239,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
             
             <div>
               <label className="block font-bold text-slate-700 mb-1">
-                आपका मोबाइल नंबर (यूजर आईडी बनेगा):
+                मोबाइल नंबर (10 Digit Mobile):
               </label>
               <input
                 type="tel"
                 maxLength={10}
                 value={regMobile}
                 onChange={(e) => setRegMobile(e.target.value.replace(/\D/g, ''))}
-                placeholder="10 अंकों का मोबाइल नंबर"
+                placeholder="उदा. 98290XXXXX"
                 className="w-full border border-slate-300 rounded-xl p-2.5 font-bold text-sm bg-slate-50"
                 required
               />
@@ -283,7 +261,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 maxLength={6}
                 value={regPin}
                 onChange={(e) => setRegPin(e.target.value)}
-                placeholder="उदा. 1234 या 4567"
+                placeholder="उदा. 1234 या 5678"
                 className="w-full border border-slate-300 rounded-xl p-2.5 font-bold font-mono text-sm bg-slate-50"
                 required
               />
@@ -291,13 +269,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
 
             <div>
               <label className="block font-bold text-slate-700 mb-1">
-                संस्था प्रधान / प्रभारी शिक्षक का नाम:
+                संस्था प्रधान / प्रभारी का नाम:
               </label>
               <input
                 type="text"
                 value={regName}
                 onChange={(e) => setRegName(e.target.value)}
-                placeholder="उदा. श्री रमेश कुमार"
+                placeholder="शिक्षक या संस्था प्रधान का नाम"
                 className="w-full border border-slate-300 rounded-xl p-2 font-medium"
                 required
               />
@@ -311,7 +289,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 type="text"
                 value={regSchool}
                 onChange={(e) => setRegSchool(e.target.value)}
-                placeholder="उदा. रा.उ.प्रा.वि. या रा.प्रा.वि."
+                placeholder="उदा. रा.उ.प्रा.वि. / रा.प्रा.वि."
                 className="w-full border border-slate-300 rounded-xl p-2 font-medium"
                 required
               />
@@ -335,9 +313,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                   type="text"
                   value={regBlock}
                   onChange={(e) => setRegBlock(e.target.value)}
+                  placeholder="ब्लॉक का नाम"
                   className="w-full border border-slate-300 rounded-xl p-2 font-medium"
+                  required
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">जिला:</label>
+              <input
+                type="text"
+                value={regDistrict}
+                onChange={(e) => setRegDistrict(e.target.value)}
+                placeholder="जिले का नाम"
+                className="w-full border border-slate-300 rounded-xl p-2 font-medium"
+                required
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-2 bg-emerald-50/60 p-2.5 rounded-xl border border-emerald-200">
@@ -345,8 +337,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 <label className="block font-bold text-emerald-950 mb-1">प्राथ. (1-5) नामांकन:</label>
                 <input
                   type="number"
-                  value={regPrimaryEnrolled}
-                  onChange={(e) => setRegPrimaryEnrolled(parseInt(e.target.value, 10) || 0)}
+                  min="0"
+                  value={regPrimaryEnrolled === '' ? '' : regPrimaryEnrolled}
+                  onChange={(e) => setRegPrimaryEnrolled(e.target.value === '' ? '' : parseInt(e.target.value, 10) || 0)}
+                  placeholder="कुल नामांकन"
                   className="w-full border border-slate-300 rounded-lg p-2 font-bold bg-white"
                 />
               </div>
@@ -354,8 +348,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
                 <label className="block font-bold text-emerald-950 mb-1">उच्च प्राथ.(6-8) नामांकन:</label>
                 <input
                   type="number"
-                  value={regUpperPrimaryEnrolled}
-                  onChange={(e) => setRegUpperPrimaryEnrolled(parseInt(e.target.value, 10) || 0)}
+                  min="0"
+                  value={regUpperPrimaryEnrolled === '' ? '' : regUpperPrimaryEnrolled}
+                  onChange={(e) => setRegUpperPrimaryEnrolled(e.target.value === '' ? '' : parseInt(e.target.value, 10) || 0)}
+                  placeholder="कुल नामांकन"
                   className="w-full border border-slate-300 rounded-lg p-2 font-bold bg-white"
                 />
               </div>

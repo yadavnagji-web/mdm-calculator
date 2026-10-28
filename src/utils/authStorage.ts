@@ -1,6 +1,5 @@
 import { UserAccount, SchoolProfile, DailyMDMEntry, StockOpeningAndReceipts, MDMNorms } from '../types';
-import { SAMPLE_SCHOOL_PROFILE, generateSampleMonthEntries, SAMPLE_STOCK_OCTOBER } from './sampleData';
-import { DEFAULT_RAJASTHAN_NORMS } from './mdmCalculations';
+import { DEFAULT_BLANK_PROFILE, DEFAULT_BLANK_STOCK, generateCleanMonthEntries } from './sampleData';
 
 const AUTH_KEYS = {
   USERS_REGISTRY: 'raj_mdm_users_registry',
@@ -9,6 +8,7 @@ const AUTH_KEYS = {
 
 /**
  * Get all registered user accounts from device storage
+ * Production mode: no hardcoded demo users.
  */
 export function getAllRegisteredUsers(): Record<string, UserAccount> {
   try {
@@ -17,22 +17,7 @@ export function getAllRegisteredUsers(): Record<string, UserAccount> {
   } catch (e) {
     console.error('Error reading users registry', e);
   }
-  
-  // Seed initial demo account if empty
-  const defaultDemoUser: UserAccount = {
-    mobileNumber: '9829012345',
-    pin: '1234',
-    teacherName: 'श्री रामेश्वर लाल शर्मा',
-    role: 'headmaster',
-    createdAt: new Date().toISOString(),
-    lastLogin: new Date().toISOString(),
-    profile: SAMPLE_SCHOOL_PROFILE,
-    academicYear: '2026-2027',
-  };
-
-  const initialRegistry = { [defaultDemoUser.mobileNumber]: defaultDemoUser };
-  localStorage.setItem(AUTH_KEYS.USERS_REGISTRY, JSON.stringify(initialRegistry));
-  return initialRegistry;
+  return {};
 }
 
 /**
@@ -116,7 +101,6 @@ export function logoutUser(): void {
 
 /**
  * User-Scoped Data Helpers
- * Ensures each mobile number has its own completely isolated year-long database
  */
 function getUserKey(mobile: string, keyName: string): string {
   return `raj_mdm_u_${mobile}_${keyName}`;
@@ -131,12 +115,11 @@ export function getUserScopedProfile(mobile: string): SchoolProfile {
   } catch (e) {
     console.error('Error getting user profile', e);
   }
-  return SAMPLE_SCHOOL_PROFILE;
+  return DEFAULT_BLANK_PROFILE;
 }
 
 export function saveUserScopedProfile(mobile: string, profile: SchoolProfile): void {
   localStorage.setItem(getUserKey(mobile, 'profile'), JSON.stringify(profile));
-  // also update registry
   const registry = getAllRegisteredUsers();
   if (registry[mobile]) {
     registry[mobile].profile = profile;
@@ -152,11 +135,11 @@ export function getUserScopedEntries(mobile: string, monthKey: string, norms: MD
     console.error('Error reading user monthly entries', e);
   }
 
-  // Generate initial entries for this month
+  // Clean empty month entries ready for entry
   const [yearStr, monthStr] = monthKey.split('-');
-  const year = parseInt(yearStr, 10) || 2026;
-  const monthIndex = (parseInt(monthStr, 10) || 10) - 1;
-  const entries = generateSampleMonthEntries(year, monthIndex, norms);
+  const year = parseInt(yearStr, 10) || new Date().getFullYear();
+  const monthIndex = (parseInt(monthStr, 10) || (new Date().getMonth() + 1)) - 1;
+  const entries = generateCleanMonthEntries(year, monthIndex);
   saveUserScopedEntries(mobile, monthKey, entries);
   return entries;
 }
@@ -172,7 +155,7 @@ export function getUserScopedStock(mobile: string, monthKey: string): StockOpeni
   } catch (e) {
     console.error('Error reading user stock', e);
   }
-  return { ...SAMPLE_STOCK_OCTOBER, monthKey };
+  return DEFAULT_BLANK_STOCK(monthKey);
 }
 
 export function saveUserScopedStock(mobile: string, monthKey: string, stock: StockOpeningAndReceipts): void {

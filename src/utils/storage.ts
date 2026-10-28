@@ -1,5 +1,5 @@
 import { SchoolProfile, DailyMDMEntry, StockOpeningAndReceipts, MDMNorms } from '../types';
-import { SAMPLE_SCHOOL_PROFILE, SAMPLE_STOCK_OCTOBER, generateSampleMonthEntries } from './sampleData';
+import { DEFAULT_BLANK_PROFILE, DEFAULT_BLANK_STOCK, generateCleanMonthEntries } from './sampleData';
 import { DEFAULT_RAJASTHAN_NORMS } from './mdmCalculations';
 
 const STORAGE_KEYS = {
@@ -16,7 +16,7 @@ export function getSavedProfile(): SchoolProfile {
   } catch (e) {
     console.error('Failed reading school profile', e);
   }
-  return SAMPLE_SCHOOL_PROFILE;
+  return DEFAULT_BLANK_PROFILE;
 }
 
 export function saveProfile(profile: SchoolProfile): void {
@@ -49,7 +49,7 @@ export function getMonthlyEntries(monthKey: string): DailyMDMEntry[] {
   const [yearStr, monthStr] = monthKey.split('-');
   const year = parseInt(yearStr, 10) || 2026;
   const monthIndex = (parseInt(monthStr, 10) || 10) - 1;
-  const entries = generateSampleMonthEntries(year, monthIndex, getSavedNorms());
+  const entries = generateCleanMonthEntries(year, monthIndex);
   saveMonthlyEntries(monthKey, entries);
   return entries;
 }
@@ -65,7 +65,7 @@ export function getStockData(monthKey: string): StockOpeningAndReceipts {
   } catch (e) {
     console.error('Failed reading stock data for ' + monthKey, e);
   }
-  return { ...SAMPLE_STOCK_OCTOBER, monthKey };
+  return DEFAULT_BLANK_STOCK(monthKey);
 }
 
 export function saveStockData(monthKey: string, stock: StockOpeningAndReceipts): void {

@@ -27,7 +27,8 @@ import { getSavedNorms, saveNorms, exportBackupJSON, importBackupJSON } from './
 import { calculateDailyMetrics } from './utils/mdmCalculations';
 
 export default function App() {
-  const currentMonthKey = '2026-10'; // Default active month
+  const today = new Date();
+  const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthKey);
   const [activeTab, setActiveTab] = useState<TabType>('daily');
 
