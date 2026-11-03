@@ -13,18 +13,47 @@ export const BloggerEmbedModal: React.FC<BloggerEmbedModalProps> = ({ isOpen, on
   const currentUrl = window.location.origin || 'https://your-mdm-app.vercel.app';
 
   const embedSnippet = `<!-- राजस्थान स्कूल MDM व बाल गोपाल योजना प्रो कैलकुलेटर (Blogger Embed Code) -->
-<div style="width: 100%; min-height: 900px; position: relative; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;">
-  <iframe 
-    src="${currentUrl}" 
-    title="Rajasthan School MDM & Bal Gopal Yojana Calculator" 
-    style="width: 100%; height: 950px; border: none; display: block;" 
-    allow="clipboard-write"
-    loading="lazy">
-  </iframe>
+<div id="mdmToolContainer" style="background: #0f172a; border-radius: 14px; overflow: hidden; margin: 25px 0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2); border: 2px solid #059669;">
+  <div style="background: #059669; color: #ffffff; padding: 12px 18px; display: flex; justify-content: space-between; align-items: center;">
+    <div style="font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px;">
+      <span>🍲</span> राजस्थान स्कूल MDM व बाल गोपाल योजना कैलकुलेटर
+    </div>
+    <button type="button" id="mdmFsBtn" onclick="toggleMdmFullscreen()" style="background: #f59e0b; border: none; color: #111827; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+      <span>⛶</span> <span id="mdmFsBtnText">फुल स्क्रीन में चलाएं</span>
+    </button>
+  </div>
+  <div style="width: 100%; height: 880px; background: #ffffff;">
+    <iframe 
+      src="${currentUrl}" 
+      id="mdmIframe"
+      title="Rajasthan School MDM & Bal Gopal Yojana Calculator" 
+      style="width: 100%; height: 100%; border: none; display: block;" 
+      allow="fullscreen; clipboard-read; clipboard-write;"
+      loading="lazy">
+    </iframe>
+  </div>
 </div>
-<p style="text-align: center; font-size: 12px; color: #64748b; margin-top: 8px;">
-  साभार: राजस्थान स्कूल शिक्षा PM-POSHAN व बाल गोपाल योजना ऑटो रिपोर्ट जनरेटर
-</p>`;
+<script>
+  function toggleMdmFullscreen() {
+    var elem = document.getElementById("mdmToolContainer");
+    var btnText = document.getElementById("mdmFsBtnText");
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      if (elem.requestFullscreen) { elem.requestFullscreen(); }
+      else if (elem.webkitRequestFullscreen) { elem.webkitRequestFullscreen(); }
+      if (btnText) btnText.innerText = "स्क्रीन सामान्य करें";
+    } else {
+      if (document.exitFullscreen) { document.exitFullscreen(); }
+      else if (document.webkitExitFullscreen) { document.webkitExitFullscreen(); }
+      if (btnText) btnText.innerText = "फुल स्क्रीन में चलाएं";
+    }
+  }
+  document.addEventListener('fullscreenchange', function() {
+    var btnText = document.getElementById("mdmFsBtnText");
+    if (btnText) {
+      btnText.innerText = document.fullscreenElement ? "स्क्रीन सामान्य करें" : "फुल स्क्रीन में चलाएं";
+    }
+  });
+</script>`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(embedSnippet);

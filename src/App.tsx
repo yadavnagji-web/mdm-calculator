@@ -88,6 +88,11 @@ export default function App() {
     saveUserScopedEntries(currentUser.mobileNumber, selectedMonth, updatedEntries);
   };
 
+  const handleSaveAllEntries = (updatedEntries: DailyMDMEntry[]) => {
+    setEntries(updatedEntries);
+    saveUserScopedEntries(currentUser.mobileNumber, selectedMonth, updatedEntries);
+  };
+
   const handleUpdateStock = (updatedStock: StockOpeningAndReceipts) => {
     setStock(updatedStock);
     saveUserScopedStock(currentUser.mobileNumber, selectedMonth, updatedStock);
@@ -182,8 +187,11 @@ export default function App() {
           <DailyRegisterView
             entries={entries}
             profile={profile}
+            norms={norms}
             selectedMonth={selectedMonth}
             onEditEntry={handleEditFromRegister}
+            onUpdateEntry={handleSaveEntry}
+            onUpdateAllEntries={handleSaveAllEntries}
           />
         )}
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { SchoolProfile, UserAccount } from '../types';
-import { Share2, Settings, Download, Upload, Code2, LogOut, UserCircle2, Sparkles } from 'lucide-react';
+import { Share2, Settings, Download, Upload, Code2, LogOut, UserCircle2, Sparkles, Maximize2, Minimize2 } from 'lucide-react';
 import { shareAppWithTeachers } from '../utils/shareUtils';
 
 interface HeaderProps {
@@ -27,6 +27,25 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
 }) => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [isFullscreen, setIsFullscreen] = React.useState(false);
+
+  React.useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const handleToggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -88,6 +107,16 @@ export const Header: React.FC<HeaderProps> = ({
                 className="bg-transparent text-white font-semibold text-xs md:text-sm focus:outline-none cursor-pointer"
               />
             </div>
+
+            {/* Fullscreen Button */}
+            <button
+              onClick={handleToggleFullscreen}
+              title={isFullscreen ? "स्क्रीन सामान्य करें" : "फुल स्क्रीन में चलाएं"}
+              className="bg-amber-400 hover:bg-amber-300 text-emerald-950 text-xs px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 shadow transition-all border border-amber-300"
+            >
+              {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{isFullscreen ? 'स्क्रीन सामान्य' : 'फुल स्क्रीन'}</span>
+            </button>
 
             {/* Blogger Embed Code Button */}
             <button
