@@ -26,40 +26,68 @@ import {
 import { getSavedNorms, saveNorms, exportBackupJSON, importBackupJSON } from './utils/storage';
 import { calculateDailyMetrics } from './utils/mdmCalculations';
 
+const DEFAULT_ACCOUNT: UserAccount = {
+  mobileNumber: '9876543210',
+  pin: '1234',
+  teacherName: 'प्रभारी शिक्षक',
+  role: 'incharge',
+  createdAt: new Date().toISOString(),
+  lastLogin: new Date().toISOString(),
+  profile: {
+    id: 'school_default',
+    schoolName: 'राजकीय उच्च प्राथमिक विद्यालय',
+    udiseCode: '08XXXXXXXXX',
+    block: 'शिक्षा ब्लॉक',
+    district: 'राजस्थान',
+    headmasterName: 'संस्था प्रधान',
+    inchargeName: 'पोषाहार प्रभारी',
+    cchName1: 'कुक-कम-हेल्पर',
+    bankAccountNo: '000000000000',
+    bankIfsc: 'SBIN0000000',
+    bankName: 'स्टेट बैंक ऑफ इंडिया',
+    primaryEnrolled: 50,
+    upperPrimaryEnrolled: 40,
+  },
+  academicYear: '2026-27',
+};
+
 export default function App() {
   const today = new Date();
   const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthKey);
-  const [activeTab, setActiveTab] = useState<TabType>('daily');
+  const [activeTab, setActiveTab] = useState<TabType>('register');
 
-  // Auth User State
-  const [currentUser, setCurrentUser] = useState<UserAccount | null>(getActiveSessionUser());
+  // Auth User State - Starts with default or active user directly (Zero login blocker)
+  const [currentUser, setCurrentUser] = useState<UserAccount>(() => {
+    return getActiveSessionUser() || DEFAULT_ACCOUNT;
+  });
   const [norms, setNorms] = useState(getSavedNorms());
 
   // User-scoped data states
   const [profile, setProfile] = useState<SchoolProfile>(() => {
-    const user = getActiveSessionUser();
-    return user ? getUserScopedProfile(user.mobileNumber) : ({} as SchoolProfile);
+    const user = getActiveSessionUser() || DEFAULT_ACCOUNT;
+    return getUserScopedProfile(user.mobileNumber) || DEFAULT_ACCOUNT.profile;
   });
 
   const [entries, setEntries] = useState<DailyMDMEntry[]>(() => {
-    const user = getActiveSessionUser();
-    return user ? getUserScopedEntries(user.mobileNumber, selectedMonth, norms) : [];
+    const user = getActiveSessionUser() || DEFAULT_ACCOUNT;
+    return getUserScopedEntries(user.mobileNumber, selectedMonth, norms);
   });
 
   const [stock, setStock] = useState<StockOpeningAndReceipts>(() => {
-    const user = getActiveSessionUser();
-    return user ? getUserScopedStock(user.mobileNumber, selectedMonth) : ({} as StockOpeningAndReceipts);
+    const user = getActiveSessionUser() || DEFAULT_ACCOUNT;
+    return getUserScopedStock(user.mobileNumber, selectedMonth);
   });
 
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isBloggerModalOpen, setIsBloggerModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   // Sync user data when currentUser or selectedMonth changes
   useEffect(() => {
     if (currentUser) {
-      const p = getUserScopedProfile(currentUser.mobileNumber);
+      const p = getUserScopedProfile(currentUser.mobileNumber) || currentUser.profile;
       const e = getUserScopedEntries(currentUser.mobileNumber, selectedMonth, norms);
       const s = getUserScopedStock(currentUser.mobileNumber, selectedMonth);
       setProfile(p);
@@ -67,17 +95,6 @@ export default function App() {
       setStock(s);
     }
   }, [currentUser, selectedMonth]);
-
-  // If user is not logged in, show Auth / Registration screen
-  if (!currentUser) {
-    return (
-      <AuthScreen
-        onLoginSuccess={(user) => {
-          setCurrentUser(user);
-        }}
-      />
-    );
-  }
 
   // Handlers
   const handleSaveEntry = (updatedEntry: DailyMDMEntry) => {
@@ -123,10 +140,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    if (window.confirm('क्या आप अपने खाते से लॉगआउट करना चाहते हैं? आपका डेटा पूरी तरह सुरक्षित रहेगा।')) {
-      logoutUser();
-      setCurrentUser(null);
-    }
+    setIsAuthModalOpen(true);
   };
 
   const handleExportBackup = () => {
@@ -284,6 +298,25 @@ export default function App() {
         isOpen={isBloggerModalOpen}
         onClose={() => setIsBloggerModalOpen(false)}
       />
+
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-md relative bg-white rounded-2xl shadow-2xl p-2">
+            <button 
+              onClick={() => setIsAuthModalOpen(false)}
+              className="absolute top-4 right-4 z-10 bg-slate-100 hover:bg-slate-200 text-slate-700 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm"
+            >
+              ✕
+            </button>
+            <AuthScreen
+              onLoginSuccess={(user) => {
+                setCurrentUser(user);
+                setIsAuthModalOpen(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
 
     </div>
   );

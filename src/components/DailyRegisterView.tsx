@@ -7,12 +7,12 @@ import {
   Download, 
   Upload, 
   CheckCircle2, 
-  Edit3, 
   Sparkles, 
   FileSpreadsheet, 
-  Info,
-  Check,
-  AlertCircle
+  RotateCcw,
+  Zap,
+  ArrowDown,
+  Info
 } from 'lucide-react';
 
 interface DailyRegisterViewProps {
@@ -35,8 +35,10 @@ export const DailyRegisterView: React.FC<DailyRegisterViewProps> = ({
   onUpdateAllEntries,
 }) => {
   const [filter, setFilter] = useState<'all' | 'working' | 'holidays'>('all');
-  const [isExcelMode, setIsExcelMode] = useState<boolean>(true);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [quickPrimary, setQuickPrimary] = useState<string>('');
+  const [quickUpper, setQuickUpper] = useState<string>('');
+  const [showQuickFill, setShowQuickFill] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const filteredEntries = entries.filter((e) => {
@@ -53,12 +55,15 @@ export const DailyRegisterView: React.FC<DailyRegisterViewProps> = ({
     year: 'numeric',
   });
 
-  // Handler for direct inline attendance change
-  const handleAttendanceChange = (
-    entry: DailyMDMEntry,
+  // Direct Inline Cell Change
+  const handleCellChange = (
+    index: number,
     field: 'primary' | 'upperPrimary',
     valStr: string
   ) => {
+    const entry = entries[index];
+    if (!entry) return;
+
     const val = Math.max(0, parseInt(valStr, 10) || 0);
     const newPrimary = field === 'primary' ? val : entry.primaryAttendance;
     const newUpperPrimary = field === 'upperPrimary' ? val : entry.upperPrimaryAttendance;
@@ -81,66 +86,225 @@ export const DailyRegisterView: React.FC<DailyRegisterViewProps> = ({
     onUpdateEntry(updated);
   };
 
-  // Handler for direct grain toggle
-  const handleGrainChange = (entry: DailyMDMEntry, grainType: 'wheat' | 'rice' | 'mixed') => {
+  // Excel Keyboard Navigation (Arrow keys, Enter, Tab)
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+    index: number,
+    field: 'primary' | 'upperPrimary'
+  ) => {
+    if (e.key === 'ArrowDown' || e.key === 'Enter') {
+      e.preventDefault();
+      const nextId = `cell-${field}-${index + 1}`;
+      const nextElem = document.getElementById(nextId) as HTMLInputElement | null;
+      if (nextElem) {
+        nextElem.focus();
+        nextElem.select();
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prevId = `cell-${field}-${index - 1}`;
+      const prevElem = document.getElementById(prevId) as HTMLInputElement | null;
+      if (prevElem) {
+        prevElem.focus();
+        prevElem.select();
+      }
+    } else if (e.key === 'ArrowRight' && field === 'primary') {
+      const nextElem = document.getElementById(`cell-upperPrimary-${index}`) as HTMLInputElement | null;
+      if (nextElem) {
+        nextElem.focus();
+        nextElem.select();
+      }
+    } else if (e.key === 'ArrowLeft' && field === 'upperPrimary') {
+      const prevElem = document.getElementById(`cell-primary-${index}`) as HTMLInputElement | null;
+      if (prevElem) {
+        prevElem.focus();
+        prevElem.select();
+      }
+    }
+  };
+
+  // Multi-cell Paste Support (Ctrl+V column from Excel)
+  const handlePaste = (
+    e: React.ClipboardEvent<HTMLInputElement>,
+    startIndex: number,
+    field: 'primary' | 'upperPrimary'
+  ) => {
+    const pasteData = e.clipboardData.getData('text');
+    if (!pasteData) return;
+
+    // Check if multi-line data is pasted
+    const lines = pasteData.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    if (lines.length > 1) {
+      e.preventDefault();
+      const updatedEntries = [...entries];
+
+      lines.forEach((line, offset) => {
+        const targetIdx = startIndex + offset;
+        if (targetIdx < updatedEntries.length) {
+          const entry = updatedEntries[targetIdx];
+          if (entry.isWorkingDay) {
+            // Check for tab-separated (e.g. copied both columns from Excel)
+            const parts = line.split('\t');
+            let pVal = entry.primaryAttendance;
+            let upVal = entry.upperPrimaryAttendance;
+
+            if (parts.length >= 2) {
+              pVal = Math.max(0, parseInt(parts[0], 10) || 0);
+              upVal = Math.max(0, parseInt(parts[1], 10) || 0);
+            } else {
+              const num = Math.max(0, parseInt(line, 10) || 0);
+              if (field === 'primary') pVal = num;
+              else upVal = num;
+            }
+
+            const metrics = calculateDailyMetrics(
+              pVal,
+              upVal,
+              entry.grainType,
+              entry.servedMilk,
+              norms
+            );
+
+            updatedEntries[targetIdx] = {
+              ...entry,
+              primaryAttendance: pVal,
+              upperPrimaryAttendance: upVal,
+              ...metrics,
+            };
+          }
+        }
+      });
+
+      onUpdateAllEntries(updatedEntries);
+      setUploadMessage(`✓ एक्सेल से ${lines.length} दिवसों की उपस्थिति सफलतापूर्वक पेस्ट हो गई!`);
+      setTimeout(() => setUploadMessage(null), 4000);
+    }
+  };
+
+  // Quick Fill Average Attendance for all working days
+  const handleApplyQuickFill = () => {
+    const p = Math.max(0, parseInt(quickPrimary, 10) || 0);
+    const up = Math.max(0, parseInt(quickUpper, 10) || 0);
+
+    if (p === 0 && up === 0) {
+      alert('कृपया प्राथमिक या उच्च प्राथमिक की कोई संख्या दर्ज करें।');
+      return;
+    }
+
+    const updated = entries.map((e) => {
+      if (!e.isWorkingDay) return e;
+      const metrics = calculateDailyMetrics(p, up, e.grainType, e.servedMilk, norms);
+      return {
+        ...e,
+        primaryAttendance: p,
+        upperPrimaryAttendance: up,
+        ...metrics,
+      };
+    });
+
+    onUpdateAllEntries(updated);
+    setShowQuickFill(false);
+    setUploadMessage(`✓ सभी ${totals.workingDays} कार्यदिवसों में औसत उपस्थिति भर दी गई है!`);
+    setTimeout(() => setUploadMessage(null), 5000);
+  };
+
+  // Clear / Reset All Entries for this month
+  const handleResetMonth = () => {
+    if (window.confirm('क्या आप इस माह की सभी दैनिक उपस्थिति को खाली (0) करना चाहते हैं?')) {
+      const cleared = entries.map((e) => {
+        const metrics = calculateDailyMetrics(0, 0, e.grainType, false, norms);
+        return {
+          ...e,
+          primaryAttendance: 0,
+          upperPrimaryAttendance: 0,
+          ...metrics,
+        };
+      });
+      onUpdateAllEntries(cleared);
+    }
+  };
+
+  // Working Day / Holiday Toggle
+  const handleToggleDayStatus = (index: number) => {
+    const entry = entries[index];
+    if (!entry) return;
+
+    const newIsWorking = !entry.isWorkingDay;
+    const newP = newIsWorking ? (entry.primaryAttendance || profile.primaryEnrolled || 40) : 0;
+    const newUp = newIsWorking ? (entry.upperPrimaryAttendance || profile.upperPrimaryEnrolled || 30) : 0;
+
+    const metrics = calculateDailyMetrics(
+      newP,
+      newUp,
+      entry.grainType,
+      newIsWorking,
+      norms
+    );
+
+    const updated: DailyMDMEntry = {
+      ...entry,
+      isWorkingDay: newIsWorking,
+      holidayReason: newIsWorking ? undefined : (entry.holidayReason || 'अवकाश'),
+      primaryAttendance: newP,
+      upperPrimaryAttendance: newUp,
+      ...metrics,
+    };
+
+    onUpdateEntry(updated);
+  };
+
+  // Grain Change
+  const handleGrainChange = (index: number, grain: 'wheat' | 'rice' | 'mixed') => {
+    const entry = entries[index];
+    if (!entry) return;
+
     const metrics = calculateDailyMetrics(
       entry.primaryAttendance,
       entry.upperPrimaryAttendance,
-      grainType,
+      grain,
       entry.servedMilk,
       norms
     );
 
     onUpdateEntry({
       ...entry,
-      grainType,
+      grainType: grain,
       ...metrics,
     });
   };
 
-  // Handler for Working Day vs Holiday toggle
-  const handleWorkingDayToggle = (entry: DailyMDMEntry) => {
-    const newIsWorking = !entry.isWorkingDay;
-    const newPrimary = newIsWorking ? (entry.primaryAttendance || profile.primaryEnrolled || 0) : 0;
-    const newUpperPrimary = newIsWorking ? (entry.upperPrimaryAttendance || profile.upperPrimaryEnrolled || 0) : 0;
+  // Milk Served Toggle
+  const handleMilkToggle = (index: number) => {
+    const entry = entries[index];
+    if (!entry) return;
 
+    const newMilk = !entry.servedMilk;
     const metrics = calculateDailyMetrics(
-      newPrimary,
-      newUpperPrimary,
+      entry.primaryAttendance,
+      entry.upperPrimaryAttendance,
       entry.grainType,
-      newIsWorking ? entry.servedMilk : false,
+      newMilk,
       norms
     );
 
     onUpdateEntry({
       ...entry,
-      isWorkingDay: newIsWorking,
-      holidayReason: newIsWorking ? undefined : (entry.holidayReason || 'अवकाश'),
-      primaryAttendance: newPrimary,
-      upperPrimaryAttendance: newUpperPrimary,
+      servedMilk: newMilk,
       ...metrics,
     });
   };
 
-  // Handler for Holiday Reason change
-  const handleHolidayReasonChange = (entry: DailyMDMEntry, reason: string) => {
-    onUpdateEntry({
-      ...entry,
-      holidayReason: reason,
-    });
-  };
-
   // 1. Download Excel/CSV Template
-  const handleDownloadExcelTemplate = () => {
+  const handleDownloadExcel = () => {
     const header = [
-      'दिनांक(YYYY-MM-DD)',
+      'दिनांक',
       'वार',
       'कार्यदिवस(1=हाँ/0=अवकाश)',
-      'प्राथमिक_उपस्थिति(1-5)',
-      'उच्च_प्राथमिक_उपस्थिति(6-8)',
+      'कक्षा_1_से_5_उपस्थिति',
+      'कक्षा_6_से_8_उपस्थिति',
       'अनाज(wheat/rice/mixed)',
       'दूध_वितरण(1=हाँ/0=नहीं)',
-      'अवकाश_कारण'
+      'अवकाश_विवरण'
     ].join(',');
 
     const rows = entries.map((e) => {
@@ -163,7 +327,7 @@ export const DailyRegisterView: React.FC<DailyRegisterViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `MDM_Attendance_Format_${selectedMonth}_${profile.schoolName || 'School'}.csv`);
+    link.setAttribute('download', `MDM_Attendance_${selectedMonth}_${profile.schoolName || 'School'}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -171,7 +335,7 @@ export const DailyRegisterView: React.FC<DailyRegisterViewProps> = ({
   };
 
   // 2. Upload Filled Excel/CSV Sheet
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -184,7 +348,6 @@ export const DailyRegisterView: React.FC<DailyRegisterViewProps> = ({
         const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
         if (lines.length < 2) throw new Error('फाइल में पर्याप्त डेटा नहीं है');
 
-        // Create map of parsed entries
         const parsedMap: Record<string, {
           isWorking: boolean;
           primary: number;
@@ -194,44 +357,36 @@ export const DailyRegisterView: React.FC<DailyRegisterViewProps> = ({
           reason?: string;
         }> = {};
 
-        // Parse each row (skip header at index 0)
         for (let i = 1; i < lines.length; i++) {
           const line = lines[i].trim();
           if (!line) continue;
 
-          // Split by comma taking quoted strings into account
           const cols: string[] = [];
           let current = '';
           let inQuotes = false;
           for (let c = 0; c < line.length; c++) {
             const ch = line[c];
-            if (ch === '"') {
-              inQuotes = !inQuotes;
-            } else if (ch === ',' && !inQuotes) {
+            if (ch === '"') inQuotes = !inQuotes;
+            else if (ch === ',' && !inQuotes) {
               cols.push(current.trim());
               current = '';
-            } else {
-              current += ch;
-            }
+            } else current += ch;
           }
           cols.push(current.trim());
 
           if (cols.length >= 3) {
             let dateStr = cols[0].replace(/^["']|["']$/g, '').trim();
-            // Handle DD-MM-YYYY or DD/MM/YYYY formatting
             if (dateStr.includes('/') || (dateStr.includes('-') && dateStr.split('-')[0].length === 2)) {
               const parts = dateStr.includes('/') ? dateStr.split('/') : dateStr.split('-');
-              if (parts.length === 3) {
-                if (parts[2].length === 4) {
-                  dateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                }
+              if (parts.length === 3 && parts[2].length === 4) {
+                dateStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
               }
             }
 
             const isWorking = cols[2].replace(/^["']|["']$/g, '').trim() === '1';
             const primary = Math.max(0, parseInt(cols[3] || '0', 10) || 0);
             const upperPrimary = Math.max(0, parseInt(cols[4] || '0', 10) || 0);
-            
+
             let grain: 'wheat' | 'rice' | 'mixed' = 'wheat';
             const rawGrain = (cols[5] || '').toLowerCase();
             if (rawGrain.includes('rice') || rawGrain.includes('चावल')) grain = 'rice';
@@ -251,13 +406,12 @@ export const DailyRegisterView: React.FC<DailyRegisterViewProps> = ({
           }
         }
 
-        // Apply to existing entries
-        let updatedCount = 0;
+        let count = 0;
         const newEntries = entries.map((entry) => {
           const match = parsedMap[entry.date];
           if (!match) return entry;
 
-          updatedCount++;
+          count++;
           const metrics = calculateDailyMetrics(
             match.isWorking ? match.primary : 0,
             match.isWorking ? match.upperPrimary : 0,
@@ -279,8 +433,8 @@ export const DailyRegisterView: React.FC<DailyRegisterViewProps> = ({
         });
 
         onUpdateAllEntries(newEntries);
-        setUploadMessage(`✓ एक्सेल शीट से ${updatedCount} दिवसों की उपस्थिति सफलतापूर्वक अपलोड व परिकलित हो गई!`);
-        setTimeout(() => setUploadMessage(null), 6000);
+        setUploadMessage(`✓ एक्सेल शीट से ${count} दिवसों का रिकॉर्ड सफलतापूर्वक अपलोड और परिकलित हो गया!`);
+        setTimeout(() => setUploadMessage(null), 5000);
       } catch (err: any) {
         alert('एक्सेल शीट पढ़ने में त्रुटि: ' + (err.message || 'अमान्य प्रारूप'));
       }
@@ -290,362 +444,469 @@ export const DailyRegisterView: React.FC<DailyRegisterViewProps> = ({
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-[1400px] mx-auto px-2 sm:px-4 py-4 space-y-4">
       
-      {/* Top Banner & Excel Quick Tools */}
-      <div className="no-print bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+      {/* Excel Ribbon & Control Bar */}
+      <div className="no-print bg-white rounded-2xl border-2 border-emerald-600/30 p-3 sm:p-4 shadow-sm space-y-3">
         
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-emerald-700" />
-              <span>मासिक दैनिक वितरण पंजी (MDM Daily Register): {monthName}</span>
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              प्रत्येक दिवस की छात्र उपस्थिति सीधे नीचे तालिका में एक्सेल की तरह भरें या एक्सेल शीट डाउनलोड/अपलोड करें।
-            </p>
+        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-3">
+          
+          {/* Title & Month */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-black shadow shrink-0">
+              <FileSpreadsheet className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                  MDM व बाल गोपाल मासिक एक्सेल स्प्रेडशीट
+                </h2>
+                <span className="bg-emerald-100 text-emerald-800 text-[11px] px-2 py-0.5 rounded-full font-bold border border-emerald-300">
+                  {monthName}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                सीधे तारीख-वार कक्षा 1-5 व 6-8 की उपस्थिति दर्ज करें; खाद्यान्न, कुकिंग राशि व दूध स्वतः परिकलित होंगे।
+              </p>
+            </div>
           </div>
 
-          {/* Quick Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto justify-start xl:justify-end">
             
-            {/* Excel Mode Toggle */}
+            {/* Quick Fill Button */}
             <button
-              onClick={() => setIsExcelMode(!isExcelMode)}
-              className={`text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 transition-all border ${
-                isExcelMode
-                  ? 'bg-emerald-800 text-white border-emerald-900 shadow-md ring-2 ring-emerald-400/40'
-                  : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
-              }`}
-              title="सीधे तालिका में लिखने की सुविधा ऑन/ऑफ करें"
+              onClick={() => setShowQuickFill(!showQuickFill)}
+              className="bg-amber-500 hover:bg-amber-400 text-emerald-950 text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow transition-all"
+              title="पूरे महीने में एक साथ औसत उपस्थिति भरें"
             >
-              <Edit3 className="w-4 h-4 text-amber-300" />
-              <span>{isExcelMode ? '✓ एक्सेल प्रविष्टि मोड ऑन' : 'एक्सेल मोड ऑन करें'}</span>
+              <Zap className="w-3.5 h-3.5 fill-current" />
+              <span>त्वरित औसत भराव</span>
             </button>
 
-            {/* Download Excel Template */}
+            {/* Download Excel */}
             <button
-              onClick={handleDownloadExcelTemplate}
-              className="bg-sky-700 hover:bg-sky-600 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow transition-all border border-sky-800"
-              title="इस माह की तैयार एक्सेल शीट डाउनलोड करें"
+              onClick={handleDownloadExcel}
+              className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow transition-all"
+              title="एक्सेल शीट डाउनलोड करें"
             >
-              <Download className="w-4 h-4 text-sky-200" />
-              <span>📥 एक्सेल फॉर्मेट डाउनलोड</span>
+              <Download className="w-3.5 h-3.5 text-emerald-200" />
+              <span>📥 एक्सेल डाउनलोड</span>
             </button>
 
-            {/* Upload Excel Sheet */}
+            {/* Upload Excel */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow transition-all border border-emerald-800"
-              title="भरी हुई एक्सेल/CSV शीट अपलोड करें"
+              className="bg-teal-700 hover:bg-teal-600 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow transition-all"
+              title="भरी हुई एक्सेल शीट अपलोड करें"
             >
-              <Upload className="w-4 h-4 text-amber-300" />
-              <span>📤 एक्सेल शीट अपलोड</span>
+              <Upload className="w-3.5 h-3.5 text-amber-300" />
+              <span>📤 एक्सेल अपलोड</span>
             </button>
             <input
               type="file"
               ref={fileInputRef}
               accept=".csv, .txt"
-              onChange={handleFileUpload}
+              onChange={handleUploadExcel}
               className="hidden"
             />
 
-            {/* Print Button */}
+            {/* Print A4 */}
             <button
               onClick={() => window.print()}
-              className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow transition-all"
+              className="bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 shadow transition-all"
             >
-              <Printer className="w-4 h-4" />
-              <span>प्रिंट A4</span>
+              <Printer className="w-3.5 h-3.5 text-amber-300" />
+              <span>🖨️ A4 प्रिंट</span>
             </button>
+
+            {/* Reset */}
+            <button
+              onClick={handleResetMonth}
+              className="bg-rose-100 hover:bg-rose-200 text-rose-800 text-xs font-bold p-2 rounded-xl transition-all"
+              title="इस माह की उपस्थिति रीसेट करें"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+
           </div>
+
         </div>
 
-        {/* Upload Success Banner */}
+        {/* Quick Fill Drawer */}
+        {showQuickFill && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 animate-in slide-in-from-top-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs font-bold text-amber-950 flex items-center gap-1">
+                <Zap className="w-4 h-4 text-amber-600 fill-current" />
+                <span>पूरे माह के सभी शिक्षण दिवसों में औसत उपस्थिति भरें:</span>
+              </span>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-amber-900 font-semibold">प्राथ. (1-5):</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={quickPrimary}
+                  onChange={(e) => setQuickPrimary(e.target.value)}
+                  placeholder="उदा. 45"
+                  className="w-20 bg-white border border-amber-300 rounded px-2 py-1 text-xs font-bold text-slate-900 text-center focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-amber-900 font-semibold">उच्च (6-8):</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={quickUpper}
+                  onChange={(e) => setQuickUpper(e.target.value)}
+                  placeholder="उदा. 38"
+                  className="w-20 bg-white border border-amber-300 rounded px-2 py-1 text-xs font-bold text-slate-900 text-center focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <button
+                onClick={handleApplyQuickFill}
+                className="bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow"
+              >
+                ✓ लागू करें
+              </button>
+            </div>
+
+            <button
+              onClick={() => setShowQuickFill(false)}
+              className="text-xs font-bold text-amber-800 hover:text-amber-950"
+            >
+              बंद करें ✕
+            </button>
+          </div>
+        )}
+
+        {/* Upload Success Alert */}
         {uploadMessage && (
-          <div className="bg-emerald-50 border-2 border-emerald-500 rounded-xl p-3 flex items-center gap-3 text-emerald-900 font-semibold text-xs animate-in fade-in">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          <div className="bg-emerald-50 border-2 border-emerald-500 rounded-xl p-2.5 flex items-center gap-2 text-emerald-950 font-bold text-xs animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{uploadMessage}</span>
           </div>
         )}
 
-        {/* Instructions helper pill */}
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-center justify-between text-[11.5px] text-amber-900 flex-wrap gap-2">
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+        {/* Tip Banner */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex items-center justify-between text-xs text-slate-600 flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="bg-emerald-600 text-white text-[10px] px-1.5 py-0.5 rounded font-black uppercase">
+              Excel टिप्स
+            </span>
             <span>
-              <strong>त्वरित सुझाव:</strong> नीचे प्राथमिक (1-5) और उच्च प्राथमिक (6-8) के बॉक्स में सीधे संख्या लिखें; खाद्यान्न, कुकिंग राशि व दूध की मात्रा तुरंत अपने आप परिकलित होकर सेव हो जाएगी!
+              संख्या लिखकर <strong>Enter (↓)</strong> दबाने से अगली तारीख पर पहुंचेंगे; <strong>Tab (→)</strong> से उच्च प्राथमिक कॉलम में जाएंगे।
             </span>
           </div>
 
-          {/* Filter Pills */}
-          <div className="bg-white/80 border border-amber-300 p-0.5 rounded-lg flex items-center text-[11px] font-bold">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-2 py-1 rounded ${filter === 'all' ? 'bg-amber-600 text-white' : 'text-slate-600'}`}
-            >
-              सभी ({entries.length})
-            </button>
-            <button
-              onClick={() => setFilter('working')}
-              className={`px-2 py-1 rounded ${filter === 'working' ? 'bg-emerald-700 text-white' : 'text-slate-600'}`}
-            >
-              कार्यदिवस ({totals.workingDays})
-            </button>
-            <button
-              onClick={() => setFilter('holidays')}
-              className={`px-2 py-1 rounded ${filter === 'holidays' ? 'bg-rose-700 text-white' : 'text-slate-600'}`}
-            >
-              अवकाश ({entries.length - totals.workingDays})
-            </button>
+          <div className="flex items-center gap-1 font-bold text-[11px]">
+            <span className="text-slate-500">कुल दिवस:</span>
+            <span className="text-slate-900">{entries.length}</span>
+            <span className="text-slate-400">|</span>
+            <span className="text-emerald-700">शिक्षण: {totals.workingDays}</span>
+            <span className="text-slate-400">|</span>
+            <span className="text-rose-700">अवकाश: {entries.length - totals.workingDays}</span>
           </div>
         </div>
 
       </div>
 
-      {/* Official A4 Print Layout Wrapper */}
-      <div className="print-container bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm overflow-x-auto">
+      {/* Real Excel Grid Sheet */}
+      <div className="print-container bg-white rounded-2xl border border-slate-300 shadow-sm overflow-hidden">
         
         {/* Printable Official Header */}
-        <div className="text-center pb-4 mb-4 border-b-2 border-slate-800 space-y-1">
-          <h3 className="text-base sm:text-lg font-bold text-slate-900 uppercase">
-            कार्यालय संस्था प्रधान - {profile.schoolName || 'राजकीय विद्यालय'}
+        <div className="print-only text-center p-4 border-b-2 border-slate-900 space-y-1">
+          <h3 className="text-lg font-black uppercase text-slate-900">
+            कार्यालय संस्था प्रधान — {profile.schoolName || 'राजकीय उच्च प्राथमिक विद्यालय'}
           </h3>
-          <p className="text-xs text-slate-700 font-medium">
+          <p className="text-xs text-slate-700 font-bold">
             ब्लॉक: {profile.block || '------'} | जिला: {profile.district || '------'} | U-DISE कोड: {profile.udiseCode || '------'}
           </p>
-          <div className="inline-block bg-slate-100 border border-slate-300 px-3 py-1 rounded text-xs font-bold text-slate-900">
-            दैनिक पोषाहार व बाल गोपाल दूध वितरण मासिक पंजी — माह: {monthName}
+          <div className="inline-block bg-slate-100 border border-slate-400 px-3 py-1 rounded text-xs font-black text-slate-900">
+            दैनिक पोषाहार एवं बाल गोपाल दूध वितरण मासिक पंजी — माह: {monthName}
           </div>
         </div>
 
-        {/* Table */}
-        <table className="w-full text-left text-xs border border-slate-300">
-          <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300">
-            <tr>
-              <th className="p-2 border border-slate-300 text-center w-10">दिनांक</th>
-              <th className="p-2 border border-slate-300 text-center w-14">वार</th>
-              <th className="p-2 border border-slate-300 text-center w-16">स्थिति</th>
-              <th className="p-2 border border-slate-300 text-center w-20 bg-emerald-50 text-emerald-950 font-extrabold">
-                प्राथ.(1-5)
-              </th>
-              <th className="p-2 border border-slate-300 text-center w-20 bg-emerald-50 text-emerald-950 font-extrabold">
-                उच्च(6-8)
-              </th>
-              <th className="p-2 border border-slate-300 text-center w-14 font-extrabold">कुल छात्र</th>
-              <th className="p-2 border border-slate-300 text-center w-24">अनाज / मेनू</th>
-              <th className="p-2 border border-slate-300 text-right w-16">गेहूँ (kg)</th>
-              <th className="p-2 border border-slate-300 text-right w-16">चावल (kg)</th>
-              <th className="p-2 border border-slate-300 text-right w-20">कुकिंग व्यय (₹)</th>
-              <th className="p-2 border border-slate-300 text-right w-16">दूध पाउडर (kg)</th>
-              <th className="p-2 border border-slate-300 text-right w-14">चीनी (g)</th>
-              <th className="p-2 border border-slate-300 text-right w-16">तैयार दूध (L)</th>
-              <th className="p-2 border border-slate-300 text-center no-print w-16">विस्तृत</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
-            {filteredEntries.map((entry) => {
-              const dObj = new Date(entry.date);
-              const dayNum = dObj.getDate();
-              const dayName = dObj.toLocaleDateString('hi-IN', { weekday: 'short' });
+        {/* Excel Spreadsheet Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            
+            {/* Excel Header Row */}
+            <thead>
+              <tr className="bg-emerald-800 text-white font-extrabold text-center border-b border-emerald-950 text-[11.5px]">
+                <th className="p-2 border border-emerald-700 w-10">#</th>
+                <th className="p-2 border border-emerald-700 w-16">दिनांक</th>
+                <th className="p-2 border border-emerald-700 w-14">वार</th>
+                <th className="p-2 border border-emerald-700 w-20">दिवस प्रकार</th>
+                <th className="p-2 border border-emerald-700 w-24 bg-emerald-900 text-amber-300 font-black">
+                  ✏️ प्राथ. (1-5)
+                </th>
+                <th className="p-2 border border-emerald-700 w-24 bg-emerald-900 text-amber-300 font-black">
+                  ✏️ उच्च (6-8)
+                </th>
+                <th className="p-2 border border-emerald-700 w-16 bg-emerald-950 font-black">कुल छात्र</th>
+                <th className="p-2 border border-emerald-700 w-20">अनाज</th>
+                <th className="p-2 border border-emerald-700 w-20 text-right">गेहूँ (kg)</th>
+                <th className="p-2 border border-emerald-700 w-20 text-right">चावल (kg)</th>
+                <th className="p-2 border border-emerald-700 w-24 text-right bg-emerald-950 text-amber-300 font-black">
+                  कुकिंग व्यय (₹)
+                </th>
+                <th className="p-2 border border-emerald-700 w-14 text-center">दूध</th>
+                <th className="p-2 border border-emerald-700 w-20 text-right">पाउडर (kg)</th>
+                <th className="p-2 border border-emerald-700 w-16 text-right">चीनी (g)</th>
+                <th className="p-2 border border-emerald-700 w-20 text-right font-black">दूध (L)</th>
+              </tr>
+            </thead>
 
-              return (
-                <tr
-                  key={entry.date}
-                  className={`${
-                    !entry.isWorkingDay ? 'bg-rose-50/60 text-rose-900' : 'hover:bg-slate-50'
-                  }`}
-                >
-                  <td className="p-2 border border-slate-300 text-center font-bold">
-                    {String(dayNum).padStart(2, '0')}
-                  </td>
-                  <td className="p-2 border border-slate-300 text-center font-medium">
-                    {dayName}
-                  </td>
+            {/* Excel Data Rows */}
+            <tbody className="divide-y divide-slate-200">
+              {entries.map((entry, idx) => {
+                const dObj = new Date(entry.date);
+                const dayNum = dObj.getDate();
+                const dayName = dObj.toLocaleDateString('hi-IN', { weekday: 'short' });
+                const isSunday = dObj.getDay() === 0;
 
-                  {/* Working Day Toggle Status */}
-                  <td className="p-1.5 border border-slate-300 text-center">
-                    <button
-                      onClick={() => handleWorkingDayToggle(entry)}
-                      title="कार्यदिवस व अवकाश बदलने के लिए क्लिक करें"
-                      className={`no-print text-[10px] font-bold px-2 py-0.5 rounded transition-all ${
-                        entry.isWorkingDay
-                          ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                          : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
-                      }`}
-                    >
-                      {entry.isWorkingDay ? 'शिक्षण' : 'अवकाश'}
-                    </button>
-                    <span className="print-only text-[11px] font-bold">
-                      {entry.isWorkingDay ? 'शिक्षण' : 'अवकाश'}
-                    </span>
-                  </td>
-
-                  {!entry.isWorkingDay ? (
-                    <td colSpan={10} className="p-2 border border-slate-300 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <span className="font-semibold text-rose-700 italic">
-                          — अवकाश:
-                        </span>
-                        <input
-                          type="text"
-                          value={entry.holidayReason || 'साप्ताहिक अवकाश'}
-                          onChange={(e) => handleHolidayReasonChange(entry, e.target.value)}
-                          className="no-print bg-white/80 border border-rose-300 rounded px-2 py-0.5 text-xs text-rose-900 w-44 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                        />
-                        <span className="print-only font-bold text-rose-800">
-                          {entry.holidayReason || 'साप्ताहिक अवकाश'}
-                        </span>
-                        <span className="font-semibold text-rose-700 italic">—</span>
-                      </div>
+                return (
+                  <tr
+                    key={entry.date}
+                    className={`transition-colors ${
+                      !entry.isWorkingDay
+                        ? 'bg-rose-50/70 text-rose-950'
+                        : isSunday
+                        ? 'bg-amber-50/50'
+                        : idx % 2 === 0
+                        ? 'bg-white hover:bg-emerald-50/40'
+                        : 'bg-slate-50/60 hover:bg-emerald-50/40'
+                    }`}
+                  >
+                    {/* Index */}
+                    <td className="p-1.5 border border-slate-300 text-center font-bold text-slate-500 font-mono text-[11px]">
+                      {idx + 1}
                     </td>
-                  ) : (
-                    <>
-                      {/* Primary Attendance - Inline Excel Input */}
-                      <td className="p-1 border border-slate-300 text-center bg-emerald-50/50">
-                        {isExcelMode ? (
+
+                    {/* Date */}
+                    <td className="p-1.5 border border-slate-300 text-center font-black text-slate-900 font-mono">
+                      {String(dayNum).padStart(2, '0')}/{String(dObj.getMonth() + 1).padStart(2, '0')}
+                    </td>
+
+                    {/* Weekday */}
+                    <td className={`p-1.5 border border-slate-300 text-center font-bold text-[11px] ${
+                      isSunday ? 'text-rose-700' : 'text-slate-700'
+                    }`}>
+                      {dayName}
+                    </td>
+
+                    {/* Working Day Toggle */}
+                    <td className="p-1 border border-slate-300 text-center">
+                      <button
+                        onClick={() => handleToggleDayStatus(idx)}
+                        className={`no-print text-[10px] font-black px-2 py-0.5 rounded transition-all shadow-xs ${
+                          entry.isWorkingDay
+                            ? 'bg-emerald-100 text-emerald-900 hover:bg-emerald-200 border border-emerald-300'
+                            : 'bg-rose-100 text-rose-900 hover:bg-rose-200 border border-rose-300'
+                        }`}
+                        title="कार्यदिवस या अवकाश टॉगल करें"
+                      >
+                        {entry.isWorkingDay ? '🟢 शिक्षण' : '🔴 अवकाश'}
+                      </button>
+                      <span className="print-only text-[10px] font-bold">
+                        {entry.isWorkingDay ? 'शिक्षण' : 'अवकाश'}
+                      </span>
+                    </td>
+
+                    {/* IF HOLIDAY */}
+                    {!entry.isWorkingDay ? (
+                      <td colSpan={11} className="p-1.5 border border-slate-300 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <span className="text-rose-800 font-bold italic text-xs">
+                            — अवकाश: {entry.holidayReason || 'साप्ताहिक अवकाश'} —
+                          </span>
+                        </div>
+                      </td>
+                    ) : (
+                      <>
+                        {/* CLASS 1-5 PRIMARY ATTENDANCE - EXCEL CELL */}
+                        <td className="p-0.5 border border-slate-300 bg-emerald-50/40">
                           <input
                             type="number"
+                            id={`cell-primary-${idx}`}
                             min="0"
                             value={entry.primaryAttendance === 0 ? '' : entry.primaryAttendance}
                             placeholder="0"
-                            onChange={(e) => handleAttendanceChange(entry, 'primary', e.target.value)}
-                            className="w-full text-center font-bold text-slate-900 bg-white border border-emerald-300 rounded py-1 px-1 focus:ring-2 focus:ring-emerald-500 focus:outline-none text-xs shadow-inner"
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => handleCellChange(idx, 'primary', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, idx, 'primary')}
+                            onPaste={(e) => handlePaste(e, idx, 'primary')}
+                            className="no-print w-full text-center font-black text-slate-900 bg-white border border-emerald-400 rounded px-1 py-1 text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none shadow-xs font-mono"
                           />
-                        ) : (
-                          <span className="font-bold text-slate-900">{entry.primaryAttendance}</span>
-                        )}
-                        <span className="print-only font-bold">{entry.primaryAttendance}</span>
-                      </td>
+                          <span className="print-only font-bold text-center block font-mono">
+                            {entry.primaryAttendance}
+                          </span>
+                        </td>
 
-                      {/* Upper Primary Attendance - Inline Excel Input */}
-                      <td className="p-1 border border-slate-300 text-center bg-emerald-50/50">
-                        {isExcelMode ? (
+                        {/* CLASS 6-8 UPPER PRIMARY ATTENDANCE - EXCEL CELL */}
+                        <td className="p-0.5 border border-slate-300 bg-emerald-50/40">
                           <input
                             type="number"
+                            id={`cell-upperPrimary-${idx}`}
                             min="0"
                             value={entry.upperPrimaryAttendance === 0 ? '' : entry.upperPrimaryAttendance}
                             placeholder="0"
-                            onChange={(e) => handleAttendanceChange(entry, 'upperPrimary', e.target.value)}
-                            className="w-full text-center font-bold text-slate-900 bg-white border border-emerald-300 rounded py-1 px-1 focus:ring-2 focus:ring-emerald-500 focus:outline-none text-xs shadow-inner"
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => handleCellChange(idx, 'upperPrimary', e.target.value)}
+                            onKeyDown={(e) => handleKeyDown(e, idx, 'upperPrimary')}
+                            onPaste={(e) => handlePaste(e, idx, 'upperPrimary')}
+                            className="no-print w-full text-center font-black text-slate-900 bg-white border border-emerald-400 rounded px-1 py-1 text-xs focus:ring-2 focus:ring-emerald-600 focus:outline-none shadow-xs font-mono"
                           />
-                        ) : (
-                          <span className="font-bold text-slate-900">{entry.upperPrimaryAttendance}</span>
-                        )}
-                        <span className="print-only font-bold">{entry.upperPrimaryAttendance}</span>
-                      </td>
+                          <span className="print-only font-bold text-center block font-mono">
+                            {entry.upperPrimaryAttendance}
+                          </span>
+                        </td>
 
-                      {/* Total Benefited */}
-                      <td className="p-2 border border-slate-300 text-center font-extrabold text-emerald-950 bg-slate-50">
-                        {entry.totalStudents}
-                      </td>
+                        {/* TOTAL BENEFITED (FORMULA) */}
+                        <td className="p-1.5 border border-slate-300 text-center font-black text-emerald-950 bg-emerald-100/40 font-mono text-xs">
+                          {entry.totalStudents}
+                        </td>
 
-                      {/* Grain Selector / Menu */}
-                      <td className="p-1 border border-slate-300 text-center">
-                        <select
-                          value={entry.grainType}
-                          onChange={(e) => handleGrainChange(entry, e.target.value as any)}
-                          className="no-print w-full bg-white border border-slate-300 rounded p-0.5 text-[11px] font-medium focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                        >
-                          <option value="wheat">गेहूँ</option>
-                          <option value="rice">चावल</option>
-                          <option value="mixed">मिश्रित</option>
-                        </select>
-                        <span className="print-only text-[11px]">
-                          {entry.grainType === 'wheat' ? 'गेहूँ' : entry.grainType === 'rice' ? 'चावल' : 'खिचड़ी'}
-                        </span>
-                      </td>
+                        {/* GRAIN TYPE SELECTOR */}
+                        <td className="p-1 border border-slate-300 text-center">
+                          <select
+                            value={entry.grainType}
+                            onChange={(e) => handleGrainChange(idx, e.target.value as any)}
+                            className="no-print w-full bg-white border border-slate-300 rounded p-0.5 text-[10.5px] font-bold focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                          >
+                            <option value="wheat">गेहूँ</option>
+                            <option value="rice">चावल</option>
+                            <option value="mixed">मिश्रित</option>
+                          </select>
+                          <span className="print-only text-[10px]">
+                            {entry.grainType === 'wheat' ? 'गेहूँ' : entry.grainType === 'rice' ? 'चावल' : 'खिचड़ी'}
+                          </span>
+                        </td>
 
-                      {/* Computed Wheat */}
-                      <td className="p-2 border border-slate-300 text-right font-mono font-medium">
-                        {entry.wheatGrams > 0 ? formatKg(entry.wheatGrams) : '-'}
-                      </td>
+                        {/* WHEAT KG */}
+                        <td className="p-1.5 border border-slate-300 text-right font-mono font-medium text-[11px]">
+                          {entry.wheatGrams > 0 ? formatKg(entry.wheatGrams) : '-'}
+                        </td>
 
-                      {/* Computed Rice */}
-                      <td className="p-2 border border-slate-300 text-right font-mono font-medium">
-                        {entry.riceGrams > 0 ? formatKg(entry.riceGrams) : '-'}
-                      </td>
+                        {/* RICE KG */}
+                        <td className="p-1.5 border border-slate-300 text-right font-mono font-medium text-[11px]">
+                          {entry.riceGrams > 0 ? formatKg(entry.riceGrams) : '-'}
+                        </td>
 
-                      {/* Computed Cooking Cost */}
-                      <td className="p-2 border border-slate-300 text-right font-mono font-extrabold text-emerald-800">
-                        {formatInr(entry.cookingCost)}
-                      </td>
+                        {/* COOKING COST ₹ */}
+                        <td className="p-1.5 border border-slate-300 text-right font-mono font-black text-emerald-950 text-xs bg-emerald-50/30">
+                          {formatInr(entry.cookingCost)}
+                        </td>
 
-                      {/* Milk Powder */}
-                      <td className="p-2 border border-slate-300 text-right font-mono text-sky-900">
-                        {entry.servedMilk ? formatKg(entry.milkPowderGrams) : '-'}
-                      </td>
+                        {/* MILK SERVED TOGGLE */}
+                        <td className="p-1 border border-slate-300 text-center">
+                          <button
+                            onClick={() => handleMilkToggle(idx)}
+                            className={`no-print text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              entry.servedMilk ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            {entry.servedMilk ? '🥛 हाँ' : 'नहीं'}
+                          </button>
+                          <span className="print-only text-[10px]">
+                            {entry.servedMilk ? 'हाँ' : '-'}
+                          </span>
+                        </td>
 
-                      {/* Sugar */}
-                      <td className="p-2 border border-slate-300 text-right font-mono text-sky-900">
-                        {entry.servedMilk ? Math.round(entry.sugarGrams) : '-'}
-                      </td>
+                        {/* MILK POWDER KG */}
+                        <td className="p-1.5 border border-slate-300 text-right font-mono text-sky-950 text-[11px]">
+                          {entry.servedMilk ? formatKg(entry.milkPowderGrams) : '-'}
+                        </td>
 
-                      {/* Prepared Milk Liters */}
-                      <td className="p-2 border border-slate-300 text-right font-mono text-sky-900 font-bold">
-                        {entry.servedMilk ? (entry.preparedMilkMl / 1000).toFixed(1) : '-'}
-                      </td>
-                    </>
-                  )}
+                        {/* SUGAR G */}
+                        <td className="p-1.5 border border-slate-300 text-right font-mono text-sky-950 text-[11px]">
+                          {entry.servedMilk ? Math.round(entry.sugarGrams) : '-'}
+                        </td>
 
-                  {/* Actions / Details */}
-                  <td className="p-2 border border-slate-300 text-center no-print">
-                    <button
-                      onClick={() => onEditEntry(entry.date)}
-                      className="text-emerald-700 hover:text-emerald-900 font-bold hover:underline text-[11px]"
-                      title="दैनिक मेनू व विस्तृत विवरण बदलें"
-                    >
-                      विस्तृत
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
+                        {/* PREPARED MILK LITERS */}
+                        <td className="p-1.5 border border-slate-300 text-right font-mono text-sky-950 font-black text-xs">
+                          {entry.servedMilk ? (entry.preparedMilkMl / 1000).toFixed(1) : '-'}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
 
-          {/* Grand Totals Footer */}
-          <tfoot className="bg-slate-200 text-slate-900 font-bold border-t-2 border-slate-400">
-            <tr>
-              <td colSpan={3} className="p-2.5 border border-slate-400 text-center">
-                मासिक कुल योग:
-              </td>
-              <td className="p-2.5 border border-slate-400 text-center font-extrabold text-emerald-950">
-                {totals.totalPrimaryBenefited}
-              </td>
-              <td className="p-2.5 border border-slate-400 text-center font-extrabold text-emerald-950">
-                {totals.totalUpperPrimaryBenefited}
-              </td>
-              <td className="p-2.5 border border-slate-400 text-center text-emerald-950 font-black text-sm">
-                {totals.totalStudentsBenefited}
-              </td>
-              <td className="p-2.5 border border-slate-400 font-medium text-slate-700 text-center text-[11px]">
-                कार्यदिवस: {totals.workingDays}
-              </td>
-              <td className="p-2.5 border border-slate-400 text-right font-mono font-bold">
-                {formatKg(totals.totalWheatGrams)}
-              </td>
-              <td className="p-2.5 border border-slate-400 text-right font-mono font-bold">
-                {formatKg(totals.totalRiceGrams)}
-              </td>
-              <td className="p-2.5 border border-slate-400 text-right font-mono font-black text-emerald-950 text-sm">
-                {formatInr(totals.totalCookingCost)}
-              </td>
-              <td className="p-2.5 border border-slate-400 text-right font-mono text-sky-950 font-bold">
-                {formatKg(totals.totalMilkPowderGrams)}
-              </td>
-              <td className="p-2.5 border border-slate-400 text-right font-mono text-sky-950 font-bold">
-                {Math.round(totals.totalSugarGrams)}
-              </td>
-              <td className="p-2.5 border border-slate-400 text-right font-mono text-sky-950 font-black">
-                {(totals.totalPreparedMilkMl / 1000).toFixed(1)}
-              </td>
-              <td className="p-2.5 border border-slate-400 no-print"></td>
-            </tr>
-          </tfoot>
-        </table>
+            {/* Excel Grand Totals Row */}
+            <tfoot className="bg-slate-900 text-white font-black border-t-2 border-slate-950 text-xs">
+              <tr>
+                <td colSpan={4} className="p-2.5 border border-slate-800 text-center bg-slate-950 text-amber-300 font-black">
+                  मासिक कुल योग (शिक्षण दिवस: {totals.workingDays})
+                </td>
+                
+                {/* Total Primary */}
+                <td className="p-2 border border-slate-800 text-center font-mono font-black text-amber-300 text-sm bg-emerald-950">
+                  {totals.totalPrimaryBenefited}
+                </td>
+
+                {/* Total Upper Primary */}
+                <td className="p-2 border border-slate-800 text-center font-mono font-black text-amber-300 text-sm bg-emerald-950">
+                  {totals.totalUpperPrimaryBenefited}
+                </td>
+
+                {/* Total Benefited Students */}
+                <td className="p-2 border border-slate-800 text-center font-mono font-black text-emerald-300 text-sm bg-black">
+                  {totals.totalStudentsBenefited}
+                </td>
+
+                {/* Menu space */}
+                <td className="p-2 border border-slate-800 text-center text-slate-400 text-[10px]">
+                  योग
+                </td>
+
+                {/* Total Wheat */}
+                <td className="p-2 border border-slate-800 text-right font-mono font-bold text-slate-200">
+                  {formatKg(totals.totalWheatGrams)}
+                </td>
+
+                {/* Total Rice */}
+                <td className="p-2 border border-slate-800 text-right font-mono font-bold text-slate-200">
+                  {formatKg(totals.totalRiceGrams)}
+                </td>
+
+                {/* Total Cooking Cost */}
+                <td className="p-2 border border-slate-800 text-right font-mono font-black text-amber-300 text-sm bg-emerald-950">
+                  {formatInr(totals.totalCookingCost)}
+                </td>
+
+                {/* Milk space */}
+                <td className="p-2 border border-slate-800 text-center text-sky-300 text-[10px]">
+                  {totals.milkDistributionDays} दिन
+                </td>
+
+                {/* Total Milk Powder */}
+                <td className="p-2 border border-slate-800 text-right font-mono font-bold text-sky-200">
+                  {formatKg(totals.totalMilkPowderGrams)}
+                </td>
+
+                {/* Total Sugar */}
+                <td className="p-2 border border-slate-800 text-right font-mono font-bold text-sky-200">
+                  {Math.round(totals.totalSugarGrams)} g
+                </td>
+
+                {/* Total Prepared Milk */}
+                <td className="p-2 border border-slate-800 text-right font-mono font-black text-sky-300 text-sm">
+                  {(totals.totalPreparedMilkMl / 1000).toFixed(1)} L
+                </td>
+              </tr>
+            </tfoot>
+
+          </table>
+        </div>
 
         {/* Signature Box for Print */}
-        <div className="pt-8 mt-6 grid grid-cols-3 text-center text-xs font-bold text-slate-900">
+        <div className="print-only pt-8 mt-6 grid grid-cols-3 text-center text-xs font-bold text-slate-900 border-t border-slate-400">
           <div>
             <p className="mt-8 border-t border-slate-400 pt-1">प्रभारी (मिड-डे मील)</p>
           </div>

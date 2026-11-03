@@ -18,8 +18,8 @@ interface NavigationProps {
 
 export const Navigation: React.FC<NavigationProps> = ({ activeTab, onTabChange }) => {
   const tabs: { id: TabType; label: string; icon: React.ReactNode; badge?: string }[] = [
+    { id: 'register', label: '📊 मासिक एक्सेल शीट (Excel Entry)', icon: <TableProperties className="w-4 h-4" />, badge: 'मुख्य शीट' },
     { id: 'daily', label: 'दैनिक उपस्थिति व SMS', icon: <CalendarDays className="w-4 h-4" /> },
-    { id: 'register', label: 'मासिक पंजी (Register)', icon: <TableProperties className="w-4 h-4" /> },
     { id: 'balgopal', label: 'बाल गोपाल दूध योजना', icon: <Milk className="w-4 h-4" /> },
     { id: 'mpr', label: 'मासिक प्रतिवेदन (MPR)', icon: <FileSpreadsheet className="w-4 h-4" />, badge: 'A4 Print' },
     { id: 'uc', label: 'उपयोगिता प्रमाण पत्र (UC)', icon: <Award className="w-4 h-4" /> },
